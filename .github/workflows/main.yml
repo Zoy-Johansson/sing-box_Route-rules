@@ -49,18 +49,14 @@ jobs:
         tar --wildcards -xvf ./data/rules_archive.tar -C ./rule_json/ '*.json'
         tar --wildcards -xvf ./data/rules_archive.tar -C ./rule_srs/ '*.srs'
 
-    - name: Commit and push config.json
-      run: |
-        git config --global user.email "action@github.com"
-        git config --global user.name "GitHub Action"
-        git add ./data/rules_archive.tar
-        git add ./rule_json/*.json
-        git add ./rule_srs/*.srs
+- name: Commit and push config.json
+  run: |
+    git config --global user.email "action@github.com"
+    git config --global user.name "GitHub Action"
+    git add ./data/rules_archive.tar
+    git add ./rule_json/*.json
+    git add ./rule_srs/*.srs
+    # 始终创建提交（即使没有检测到工作树变化，也会生成空提交）
+    git commit --allow-empty -m "Update rules"
+    git push
 
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-          exit 0
-        else
-          git commit -m "Update rules"
-          git push
-        fi
