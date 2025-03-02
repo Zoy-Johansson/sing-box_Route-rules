@@ -13,27 +13,29 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout repository
+      run: |
+        # 使用 GITHUB_TOKEN 进行认证，克隆当前仓库代码到工作目录
+        git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
+    
+    - name: Setup Python environment
+      run: |
+        # 检查 Python 版本，如有必要，可使用 apt-get 安装指定版本
+        python3 --version
+        python3 -m pip install --upgrade pip
+    
+    - name: Install dependencies
+      run: |
+        pip install pandas requests pyyaml
 
-    - name: "Setup sing-box"
+    - name: Setup sing-box
       env:
         SING_BOX_DEB_URL: "https://github.com/SagerNet/sing-box/releases/download/v1.8.1/sing-box_1.8.1_linux_amd64.deb"
       run: |
-          set -Eeuo pipefail
-          wget -O sing-box.deb $SING_BOX_DEB_URL
-          sudo dpkg -i sing-box.deb
-
-    - name: Set up Python3
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.x
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pandas requests pyyaml
+        set -Eeuo pipefail
+        wget -O sing-box.deb $SING_BOX_DEB_URL
+        sudo dpkg -i sing-box.deb
 
     - name: Run script
       run: python ../convert.py
@@ -51,12 +53,11 @@ jobs:
 
     - name: Commit and push config.json
       run: |
-       git config --global user.email "action@github.com"
-       git config --global user.name "GitHub Action"
-       git add ./data/rules_archive.tar
-       git add ./rule_json/*.json
-       git add ./rule_srs/*.srs
-       # 始终创建提交（即使没有检测到工作树变化，也会生成空提交）
-       git commit --allow-empty -m "Update rules"
-       git push
-
+        git config --global user.email "action@github.com"
+        git config --global user.name "GitHub Action"
+        # 始终添加文件，新生成的文件会覆盖同名的旧文件
+        git add ./data/rules_archive.tar
+        git add ./rule_json/*.json
+        git add ./rule_srs/*.srs
+        git commit --allow-empty -m "Update rules"
+        git push
