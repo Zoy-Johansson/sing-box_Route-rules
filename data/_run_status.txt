@@ -1,0 +1,4 @@
+install_singbox: started 2026-03-18T14:34:57Z
+install_singbox: ok
+prepare: cleaned ../json and ../srs
+convert_start: 2026-03-18T14:35:01Z
