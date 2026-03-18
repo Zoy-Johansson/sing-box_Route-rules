@@ -1,0 +1,107 @@
+name: Generate sing-box rules (v3)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # 每周日 15:00 上海时间 (UTC+8) -> UTC is 07:00 on the same day
+    - cron: '0 7 * * 0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        run: |
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
+
+      - name: Setup Python
+        run: |
+          python3 --version
+          python3 -m pip install --upgrade pip
+
+      - name: Install Python deps
+        run: |
+          pip install pandas requests pyyaml
+
+      - name: Install sing-box (v1.13.3)
+        env:
+          SING_BOX_DEB_URL: "https://github.com/SagerNet/sing-box/releases/download/v1.13.3/sing-box_1.13.3_linux_amd64.deb"
+        run: |
+          mkdir -p ./data
+          STATUS_FILE=./data/_run_status.txt
+          echo "install_singbox: started $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$STATUS_FILE"
+          set -Eeuo pipefail
+          wget -O sing-box.deb "$SING_BOX_DEB_URL" || echo "wget_failed" >> "$STATUS_FILE" && true
+          sudo dpkg -i sing-box.deb || { echo "dpkg_install_failed: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$STATUS_FILE"; }
+          if command -v sing-box >/dev/null 2>&1; then
+            echo "install_singbox: ok" >> "$STATUS_FILE"
+          else
+            echo "install_singbox: missing" >> "$STATUS_FILE"
+          fi
+        continue-on-error: true
+
+      - name: Prepare output directories (clear old files)
+        run: |
+          # workflow 层先清空输出目录（保留目录）
+          # 调用时脚本默认使用 ../json 和 ../srs，当 working-directory 为 data/
+          mkdir -p ./json ./srs
+          # 如果你用的是 repo 根路径（workflow 会在 repo 根 clone），确保清理 repo 根的目录
+          # 清理仓库根的 json/ srs/ 目录（以防 workflow 在 data/ 下运行脚本）
+          mkdir -p ../json ../srs
+          rm -rf ../json/* || true
+          rm -rf ../srs/* || true
+          echo "prepare: cleaned ../json and ../srs" >> ./data/_run_status.txt || true
+
+      - name: Run converter (reads ../source.txt, emits json/ and srs/)
+        working-directory: ./data/
+        run: |
+          STATUS_FILE=./_run_status.txt
+          echo "convert_start: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$STATUS_FILE"
+          # 运行并捕获返回码，避免 job 直接失败
+          ( python3 ../convert_and_emit_v3.py --source ../source.txt --json-out ../json --srs-out ../srs )
+          RC=$?
+          if [ $RC -eq 0 ]; then
+            echo "convert: ok" >> "$STATUS_FILE"
+          else
+            echo "convert: failed rc=$RC" >> "$STATUS_FILE"
+          fi
+        continue-on-error: true
+
+      - name: Archive outputs (always runs)
+        if: always()
+        run: |
+          mkdir -p ./data
+          # archive repo-root json/srs into data/rules_v3_archive.tar
+          if [ -d ../json ]; then
+            tar -cvf ./data/rules_v3_archive.tar -C ../json . || true
+          else
+            echo "archive: json_missing" >> ./data/_run_status.txt
+          fi
+          if [ -d ../srs ]; then
+            tar --append -f ./data/rules_v3_archive.tar -C ../srs . || true
+          else
+            echo "archive: srs_missing" >> ./data/_run_status.txt
+          fi
+
+      - name: Commit & push outputs (always runs)
+        if: always()
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          git add ./data/rules_v3_archive.tar || true
+          git add ./json/*.json || true
+          git add ./srs/*.srs || true
+          git add ./data/_run_status.txt || true
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          STATUS_SUMMARY="Update rules (v3) at ${TIMESTAMP}"
+          if [ -f ./data/_run_status.txt ]; then
+            STAIL=$(tail -n 50 ./data/_run_status.txt | sed -e ':a;N;$!ba;s/\n/; /g')
+            STATUS_SUMMARY="${STATUS_SUMMARY} -- status: ${STAIL}"
+          fi
+          git commit --allow-empty -m "${STATUS_SUMMARY}" || true
+          git push || true
